@@ -34,8 +34,395 @@ class VcenterOperations:
         self.password = password
         self.certfile = certfile
         self.vcenter=VCenterconnection()
-        self.vcenter.connect_to_vcenter(self.hostname,self.username,self.password,self.certfile)
+        self.vcenter.connect_to_vcenter(self.hostname, self.username, self.password, self.certfile)
         
+    def list_of_datacenters(self):
+        """
+        list_of_datacenters(self): It returns list of Datacenters in vCenter.
+
+        Variables:
+            None.
+
+        Return:
+            datacenters_name_list(list): List of the Datacenters.
+        """
+        datacenters_name_list = []
+        try:
+            if self.vcenter:
+                object_view = self.vcenter.get_object([vim.Datacenter])
+                datacenters_list = object_view.view
+                if len(datacenters_list) > 0:
+                    for i in datacenters_list:
+                        datacenters_name_list.append(i.name)
+
+                        return datacenters_name_list
+
+                else:
+                    raise DatacentersUnavaiable()
+            else:
+                raise Vcenterconnectionerror()
+
+        except Vcenterconnectionerror as error:
+            print(error.message)
+            raise
+        except VMUnavaiable as error:
+            print(error.message)
+            raise
+        except DatacentersUnavaiable as error:
+            print(error)
+            raise
+
+    def create_cluster(self, dcname, cluster_name):
+        """
+        create_cluster(self, dcname, cluster_name): creates a new cluster.
+
+        Variables:
+            dcname(str): name of datacenter.
+            cluster_name(str): name of cluster.
+
+        Return:
+            new cluster name.
+        """
+        try:
+            if self.vcenter:
+                datacenter = self.vcenter.get_dc_object([vim.Datacenter], dcname)
+                cluster = self.vcenter.get_dc_object([vim.ClusterComputeResource], cluster_name)
+                if cluster is not None:
+                    logging.info("cluster already exists...!")
+                    return cluster
+                else:
+                    if cluster_name is None:
+                        raise ValueError("Missing value for cluster.")
+                    if datacenter is None:
+                        raise ValueError("Missing value for datacenter.")
+
+                    logging.info("Creating Cluster with name - %s " % cluster_name )
+                    cluster_spec = vim.cluster.ConfigSpecEx()
+                    host_folder = datacenter.hostFolder
+                    cluster = host_folder.CreateClusterEx(name=cluster_name, spec=cluster_spec)
+
+                    return cluster.name
+            else:
+                raise Vcenterconnectionerror()
+
+        except Vcenterconnectionerror as error:
+            print(error.message)
+            raise
+
+    def list_of_clusters(self):
+        """
+        list_of_clusters(self): It returns list of clusters in vm.
+
+        Variables:
+            None
+
+        Return:
+            clusters_list(list): List of the clusters.
+        """
+        clusters_list = []
+        try:
+            if self.vcenter:
+                clusters_data = self.vcenter.get_clusters_list()
+                for key in clusters_data.keys():
+                    data_list = clusters_data[key].keys()
+                    clusters_list.append(data_list)
+
+                return clusters_list
+            else:
+                raise Vcenterconnectionerror()
+        except Vcenterconnectionerror as error:
+            print(error.message)
+            raise
+        except VMUnavaiable as error:
+            print(error.message)
+            raise
+
+    def cluster_exists_or_not(self, cluster_name):
+        """
+        cluster_exists_or_not(self, cluster_name): It returns list of clusters in vm.
+
+        Variables:
+            cluster_name(str): Name of the Cluster.
+
+        Return:
+            clusters_exists_or_not(bool): Returns True or False.
+        """
+        clusters_list = []
+        try:
+            if self.vcenter:
+                clusters_data = self.vcenter.get_clusters_list()
+                for key in clusters_data.keys():
+                    for data_list in clusters_data[key].keys():
+                        clusters_list.append(data_list)
+
+                return cluster_name in clusters_list
+            else:
+                raise Vcenterconnectionerror()
+        except Vcenterconnectionerror as error:
+            print(error.message)
+            raise
+        except VMUnavaiable as error:
+            print(error.message)
+            raise
+        except DatacentersUnavaiable as error:
+            print(error)
+            raise
+        except ClustersUnavaiable as error:
+            print(error)
+            raise
+
+    def list_of_hosts_under_cluster(self, cluster_name):
+        """
+        list_of_hosts_under_cluster(self, cluster_name): It returns list of hosts under cluster.
+
+        Variables:
+            cluster_name(str): Name of the Cluster.
+
+        Return:
+            host_list(list): Returns list of hosts under cluster.
+        """
+        hosts_list = []
+        try:
+            if self.vcenter:
+                children = self.vcenter.get_child_obj()
+                for child in children:
+                    dc = child
+                    clusters = dc.hostFolder.childEntity
+                    for cluster in clusters:
+                        if cluster.name == cluster_name:
+                            hosts = cluster.host
+                            for host in hosts:
+                                hostname = host.summary.config.name
+                                hosts_list.append(hostname)
+
+                                return hosts_list
+                    else:
+                        raise ClustersUnavaiable("No Clusters available with %s name" % cluster_name)
+            else:
+                raise Vcenterconnectionerror()
+        except Vcenterconnectionerror as error:
+            print(error.message)
+            raise
+        except VMUnavaiable as error:
+            print(error.message)
+            raise
+        except DatacentersUnavaiable as error:
+            print(error)
+            raise
+        except ClustersUnavaiable as error:
+            print(error)
+            raise
+
+    def vm_snapshot(self, vm_name, snap_name, desc, dumpmemory=False, quiesce=False):
+        """
+        vm_snapshot(self, vm_name snap_name, desc, dumpmemory, quiesce): It creates a vm snapshot.
+
+        Variables:
+            vm_name(str): Name of the VM.
+            snap_name(str): Name of the snapshot.
+            desc(str): description of snapshot.
+            dumpmemory(bool): True/False
+            quiesce(bool): True/False
+
+        Return:
+            status.
+        """
+        try:
+            if self.vcenter:
+                vm = self.vcenter.get_dc_object([vim.VirtualMachine], vm_name)
+                logging.info("Creating snapshot %s for vm: %s" % (
+                                                snap_name, vm.name))
+                WaitForTask(vm.CreateSnapshot(
+                            snap_name, desc, dumpmemory, quiesce))
+                # obj = vm.snapshot.currentSnapshot
+
+                logging.info("snapshot with name %s created successfully." % snap_name)
+            else:
+                raise Vcenterconnectionerror()
+        except Vcenterconnectionerror as error:
+            print(error.message)
+            raise
+        except VMUnavaiable as error:
+            print(error.message)
+            raise
+
+    def create_template(self, dcname, vm_name, target_host, template_name):
+        """
+        create_template(self, dcname, vm_name, 
+            target_host, template_name): It creates a template from vm.
+
+        Variables:
+            dcname(str): datacenter_name
+            vm_name(str): Name of the VM.
+            target_host(str): target host ip of the vm.
+            template_name(str): new template name.
+
+        Return:
+            status information.
+        """
+        try:
+            if self.vcenter:
+                datacenter = self.vcenter.get_dc_object([vim.Datacenter], dcname)
+                vmFolder = datacenter.vmFolder
+                vm = self.vcenter.get_dc_object([vim.VirtualMachine], vm_name)
+                # if vm.runtime.powerState != 'poweredOff':
+                #     print "WARNING:: Power off your VM before creating template"
+                #     sys.exit()
+
+                target_host = self.vcenter.get_dc_object([vim.HostSystem], target_host)
+                relocate_spec = vim.vm.RelocateSpec()
+                for datastore in target_host.datastore:
+                    #Store the OVS vApp VM in local datastore of each host
+                    if datastore.summary.type == 'VMFS':
+                        logging.info("Storing the template in %s" % datastore.name)
+                        relocate_spec.datastore = datastore
+                        break
+
+                relocate_spec.host = target_host
+                relocate_spec.pool = vm.resourcePool
+
+                cloneSpec = vim.vm.CloneSpec(powerOn=False, template=True, location=relocate_spec)
+                logging.info("Creating template... ")
+                task = vm.Clone(name=template_name, folder=vmFolder, spec=cloneSpec)
+                # import ipdb; ipdb.set_trace()
+                job_status = WaitForTask(task, 'creating template from vm')
+                if job_status:
+                    logging.info("Template %s created successfully" % template_name)
+            else:
+                raise Vcenterconnectionerror()
+        except Vcenterconnectionerror as error:
+            print error.message
+            raise
+        except VMUnavaiable as error:
+            print error.message
+            raise
+
+    def vm_to_different_datastore(self, vm_name, dest_host, ds_name):
+        """
+        vm_to_different_datastore(self, vm_name, 
+            dest_host, ds_name): move vm to different datastore.
+
+        Variables:
+            vm_name(str): Name of the VM.
+            dest_host(str): Host ip.
+            ds_name(str): Name of the Destination Datastore.
+
+        Return:
+            status information.
+        """
+        try:
+            if self.vcenter:
+                vm = self.vcenter.get_dc_object([vim.VirtualMachine], vm_name)
+                destination_host = self.vcenter.get_dc_object([vim.HostSystem], dest_host)
+                datastore = self.vcenter.get_dc_object([vim.Datastore], ds_name)
+                # import ipdb; ipdb.set_trace()
+                resource_pool = vm.resourcePool
+                
+                # Live Migration :: Change both host and datastore
+                vm_relocate_spec = vim.vm.RelocateSpec()
+                vm_relocate_spec.host = destination_host
+                vm_relocate_spec.pool = resource_pool
+                vm_relocate_spec.datastore = datastore
+
+                if vm in destination_host.vm:
+                    if datastore in destination_host.datastore:
+                        task = vm.Relocate(spec=vm_relocate_spec)
+                        job_status = WaitForTask(task, 'creating vm to different datastore')
+                        if job_status:
+                            logging.info(" %s moved successfully to %s " % (vm_name, ds_name))
+                    else:
+                        raise DatastoreUnavailable("%s is not under %s datastores." % (ds_name, destination_host))
+                else:
+                    raise VMUnavaiable("%s is not under %s vms." % (vm_name, destination_host))
+            else:
+                raise Vcenterconnectionerror()
+        except Vcenterconnectionerror as error:
+            print error.message
+            raise
+        except VMUnavaiable as error:
+            print error.message
+            raise
+        except DatastoreUnavailable as error:
+            print(error)
+            raise
+
+    def clone_vm(self, dcname, cluster_name, datastore_name, 
+                            vm_name, new_vm_name, cpus=1, mem=3):
+        """
+        clone_vm(self, dcname, cluster_name, datastore_name,
+                             vm_name, new_vm_name): It clone vm.
+
+        Variables:
+            dcname(str): datacenter_name
+            cluster_name(str): cluster name.
+            datastore_name(str): datastore name.
+            temp_name(str): template name.
+            new_vm_name(str): new VM name.
+            cpus(int): no.of cpus(default=1)
+            mem(int): memory size in GB(default=3)
+
+        Return:
+            status information.
+        """
+        try:
+            if self.vcenter:
+                mem = mem * 1024
+                datacenter = self.vcenter.get_dc_object([vim.Datacenter], dcname)
+                destfolder = datacenter.vmFolder
+                cluster = self.vcenter.get_dc_object([vim.ClusterComputeResource], cluster_name)
+                resource_pool = cluster.resourcePool # use same root resource pool that my desired cluster uses
+                datastore = self.vcenter.get_dc_object([vim.Datastore], datastore_name)
+                vm = self.vcenter.get_dc_object([vim.VirtualMachine], vm_name)
+
+                # Relocation spec
+                relospec = vim.vm.RelocateSpec()
+                relospec.datastore = datastore
+                relospec.pool = resource_pool
+
+                # DNS settings
+                globalip = vim.vm.customization.GlobalIPSettings()
+                # globalip.dnsServerList = deploy_settings['dns_servers']
+                # globalip.dnsSuffixList = ip_settings[0]['domain']
+                
+                # Hostname settings
+                ident = vim.vm.customization.LinuxPrep()
+                # ident.domain = ip_settings[0]['domain']
+                ident.hostName = vim.vm.customization.FixedName()
+                ident.hostName.name = new_vm_name
+                
+                customspec = vim.vm.customization.Specification()
+                # customspec.nicSettingMap = adaptermaps
+                customspec.globalIPSettings = globalip
+                customspec.identity = ident
+
+                # VM config spec
+                vmconf = vim.vm.ConfigSpec()
+                vmconf.numCPUs = cpus
+                vmconf.memoryMB = mem
+                vmconf.cpuHotAddEnabled = True
+                vmconf.memoryHotAddEnabled = True
+                # vmconf.deviceChange = devices
+
+                # Clone spec
+                clonespec = vim.vm.CloneSpec()
+                clonespec.location = relospec
+                clonespec.config = vmconf
+                clonespec.customization = customspec
+                clonespec.powerOn = True
+                clonespec.template = False
+
+                task = vm.Clone(folder=destfolder, name=new_vm_name, spec=clonespec)
+                if task:
+                    logging.info(" %s cloned successfully from %s " % (new_vm_name, vm_name))
+            else:
+                raise Vcenterconnectionerror()
+        except Vcenterconnectionerror as error:
+            print error.message
+            raise
+        except VMUnavaiable as error:
+            print error.message
+            raise
+
     def vm_storage(self,name_of_vm):
         """
         It gives information of storage attached to the VM.
@@ -418,7 +805,7 @@ class VcenterOperations:
                 state = vm.runtime.connectionState
                 return state
             else:
-                raise Vcenterconnectionerror()
+                raise Vcenterconnectionerror()#("Vcenter connection is not available")
         except Vcenterconnectionerror as error:
             print(error.message)
             raise
@@ -479,7 +866,7 @@ class VcenterOperations:
 
                 print("Hba device scanning is successful")
             else:
-                raise Vcenterconnectionerror()
+                raise Vcenterconnectionerror()#("Vcenter connection is not available")
         except Vcenterconnectionerror as error:
             print(error.message)
             raise
@@ -515,134 +902,30 @@ class VcenterOperations:
                         break
                 return paths
             else:
-                raise Vcenterconnectionerror()
+                raise Vcenterconnectionerror()#("Vcenter connection is not available")
         except Vcenterconnectionerror as error:
             print(error.message)
             raise
         except HostUnavaiable as error:
             print(error.message)
             raise
-    def datastore_list(self):
+
+
+    def disconnect(self):
         """
-        datastore_list(self): It rerurns the list of the datastore available on the Vcenter.
+        It disconnect the Vcenter conection.
 
-        Return:
-            datastores(list): list of the datastores.
-        """
-        try:
-            if self.vcenter:
-                datastores=[]
+        Return: None.
 
-                datastore=self.vcenter.get_datastore()
-                for ds in datastore:
-                    datastores.append(ds.name)
-                return datastores
-            else:
-                raise Vcenterconnectionerror()
-        except Vcenterconnectionerror as error:
-            print(error.message)
-            raise
-
-    def datastore_hosts(self,datastore_name):
-        """
-        datastore_hosts(self,datastore_name): It return the list of host on the  specified datastore.
-
-        Variables:
-            datastore_name(str): Name of the datastore.
-
-        Return:
-            hosts(list): List of the hosts on datastore.
         """
         try:
             if self.vcenter:
-                host_list = []
-                datastore = self.vcenter.get_datastore(datastore_name)
-                hosts=datastore.host
-                for host in hosts:
-                    host_list.append(host.key.name)
-                return host_list
+                self.vcenter.disconnect()
             else:
-                raise Vcenterconnectionerror()
+                raise Vcenterconnectionerror()#("Vcenter connection is not available")
         except Vcenterconnectionerror as error:
             print(error.message)
-            raise
-        except datastoreUNavaialble as error:
-            print(error.message)
-            raise
-    def template_datacenter(self,datacenter_name):
-        """
-        template_datacenter(self,datacenter_name): It Returns the list of templates under the specified data center.
-
-        Variables:
-            datacenter_name(str): Name of the data center.
-
-        Return:
-            templates(List): List of the templates.
-        """
-        try:
-            if self.vcenter:
-                templates = []
-                datacenter = self.vcenter.get_datacenter_by_name(datacenter_name)
-                for vm in datacenter.vmFolder.childEntity:
-                    if isinstance(vm, vim.VirtualMachine):
-                        if vm.config.template:
-                            templates.append(vm.name)
-                return templates
-            else:
-                raise Vcenterconnectionerror()
-        except Vcenterconnectionerror as error:
-            print(error.message)
-            raise
-        except DatacenterUnavaiable as error:
-            print(error.message)
-            raise
-
-    def vmware_tools_version(self,name_of_vm):
-        """
-        vmware_tools_version(self,vm_name): It returns vmware tools version installed.
-
-        Variables:
-            vm_name(str): Name of the virtual machine.
-
-        Return:
-            version(str): VMware tools version.
-        """
-        try:
-            if self.vcenter:
-                vm = self.vcenter.get_vm_by_name(name_of_vm)
-                import ipdb; ipdb.set_trace()
-                version = vm.guest.toolsVersion
-                return version
-            else:
-                raise Vcenterconnectionerror()
-        except Vcenterconnectionerror as error:
-            print(error.message)
-            raise
-        except VMUnavaiable as error:
-            print(error.message)
-            raise
-
-    def datacenter_exist(self,datacenter_name):
-        """
-        datacenter_exist(self,datacenter_name): It resturns True if the given datacenter is there orherwise returns False.
-
-        Variables:
-            datacenter_name(str): Name of the datacenter.
-
-        Return:
-            result(Boolean): True od False as per the result.
-        """
-        try:
-            if self.vcenter:
-                datacenter = self.vcenter.get_obj(self.vcenter.connect.RetrieveContent(), [vim.Datacenter],datacenter_name)
-                if datacenter:
-                    return True
-                else:
-                    return False
-            else:
-                raise Vcenterconnectionerror()
-        except Vcenterconnectionerror as error:
-            print(error.message)
+            raise     
 
     def reboot_host(self, name_of_host):
         '''Reboot Esxi host:
@@ -856,21 +1139,6 @@ class VcenterOperations:
         except Exception as e:
             print "Caught exception: %s" % str(e)
             print e.message
-    def disconnect(self):
-        """
-        It disconnect the Vcenter conection.
-
-        Return: None.
-
-        """
-        try:
-            if self.vcenter:
-                self.vcenter.disconnect()
-            else:
-                raise Vcenterconnectionerror()#("Vcenter connection is not available")
-        except Vcenterconnectionerror as error:
-            print(error.message)
-            raise   
 
 
 if __name__ =='__main__':
@@ -878,19 +1146,18 @@ if __name__ =='__main__':
         #import pdb; pdb.set_trace()
         V=VcenterOperations()
         V.connect("183.82.41.58","root","Nexii@123")
-        #print(V.datastore_hosts('vasco-test-250G'))
-        #print(V.template_datacenter('Nexiilabs'))
-        # print(V.datacenter_exist("Nexiilabs"))
-        print(V.vmware_tools_version('vCenter-19'))
-        #print(V.datastore_list())
-        """
-        V.disk_space_increase("avinash",14,"Nexiilabs")
-        V.vmotion("avinash", "192.168.50.16","fgw")
-        V.reboot_host("192.21.12.22")
-        V.shutdown_host("192.21.12.22")
-        V.enter_maintanence_mode("192.168.50.433",3000)
-        V.exit_maintanence_mode("192.168.50.433",3000)
-        """
+        # V.list_of_datacenters()
+        # V.list_of_clusters()
+        # V.cluster_exists_or_not('test2')
+        print(V.list_of_hosts_under_cluster('compute_cluster'))
+        # V.create_cluster('Nexiilabs', 'test1')
+        # V.vm_snapshot("avinash", "avi_snap4", "test snapshot4", True, True)
+        # V.disk_space_increase("avinash",14,"Nexiilabs")
+        # V.vmotion("avinash", "192.168.50.16","fgw")
+        # V.reboot_host("192.21.12.22")
+        # V.shutdown_host("192.21.12.22")
+        # V.enter_maintanence_mode("192.168.50.433",3000)
+        # V.exit_maintanence_mode("192.168.50.433",3000)
 
 
         #print(V.num_of_cores('python'))
